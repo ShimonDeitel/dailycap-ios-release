@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Foundation
 
 struct HomeView: View {
     var forceScreen: String? = nil
@@ -256,10 +257,10 @@ private struct NeedleShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        let rad = angle * .pi / 180
+        let rad: Double = angle * .pi / 180
         let tip = CGPoint(
-            x: center.x + cos(rad) * radius,
-            y: center.y + sin(rad) * radius
+            x: center.x + CGFloat(cos(rad)) * radius,
+            y: center.y + CGFloat(sin(rad)) * radius
         )
         p.move(to: center)
         p.addLine(to: tip)
@@ -275,14 +276,14 @@ private struct TickMark: Shape {
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        let rad = angle * .pi / 180
+        let rad: Double = angle * .pi / 180
         let outer = CGPoint(
-            x: center.x + cos(rad) * (radius + length / 2),
-            y: center.y + sin(rad) * (radius + length / 2)
+            x: center.x + CGFloat(cos(rad)) * (radius + length / 2),
+            y: center.y + CGFloat(sin(rad)) * (radius + length / 2)
         )
         let inner = CGPoint(
-            x: center.x + cos(rad) * (radius - length / 2),
-            y: center.y + sin(rad) * (radius - length / 2)
+            x: center.x + CGFloat(cos(rad)) * (radius - length / 2),
+            y: center.y + CGFloat(sin(rad)) * (radius - length / 2)
         )
         p.move(to: inner)
         p.addLine(to: outer)
