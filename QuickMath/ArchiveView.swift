@@ -1,242 +1,196 @@
 import SwiftUI
 import Charts
 
+/// Pro feature: history heat-grid, weekly averages, streak-freeze info, CSV export.
 struct InsightsView: View {
     @EnvironmentObject var appModel: AppModel
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedSegment = 0
-    private let segments = ["History", "Dual Wave", "Insights"]
+    @State private var showExportSheet = false
+    @State private var exportText = ""
+
+    private var last30: [DayLog] {
+        Array(appModel.allLogs.prefix(30))
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 QMBackground()
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Summary metrics
+                        HStack(spacing: 12) {
+                            MetricTile(
+                                value: "\(appModel.streak.currentStreak)",
+                                label: "Current Streak"
+                            )
+                            MetricTile(
+                                value: "\(appModel.streak.longestStreak)",
+                                label: "Best Streak"
+                            )
+                            MetricTile(
+                                value: String(format: "%.0f%%", appModel.underCapRatio * 100),
+                                label: "Under Cap"
+                            )
+                        }
+                        .padding(.horizontal)
 
-                if !store.isPro {
-                    VStack(spacing: 16) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(Color.qmAccent)
-                        Text("Tideline Pro Required")
-                            .font(.title2.weight(.bold))
-                        Text("Unlock multi-month history, dual-wave comparison and insights.")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 32)
-                        Button("Dismiss") { dismiss() }
-                            .softButton()
-                    }
-                } else {
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            Picker("View", selection: $selectedSegment) {
-                                ForEach(0..<segments.count, id: \.self) { i in
-                                    Text(segments[i]).tag(i)
+                        // Weekly average
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("7-Day Average Spend")
+                                .font(.headline)
+                            Text(String(format: "$%.2f / day", appModel.weeklyAverage))
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(
+                                    appModel.weeklyAverage <= appModel.activeCap
+                                    ? Color.qmCorrect
+                                    : Color.qmWrong
+                                )
+
+                            if !last30.isEmpty {
+                                Chart {
+                                    ForEach(Array(last30.reversed())) { log in
+                                        BarMark(
+                                            x: .value("Date", log.date, unit: .day),
+                                            y: .value("Spent", log.spent)
+                                        )
+                                        .foregroundStyle(
+                                            log.underCap ? Color.qmAccent.opacity(0.8) : Color.qmWrong.opacity(0.8)
+                                        )
+                                    }
+                                    RuleMark(y: .value("Cap", appModel.activeCap))
+                                        .foregroundStyle(Color.qmAccent)
+                                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4]))
+                                        .annotation(position: .top, alignment: .trailing) {
+                                            Text("Cap")
+                                                .font(.caption2)
+                                                .foregroundStyle(Color.qmAccent)
+                                        }
+                                }
+                                .frame(height: 160)
+                                .chartXAxis {
+                                    AxisMarks(values: .stride(by: .day, count: 7)) { _ in
+                                        AxisGridLine()
+                                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                    }
+                                }
+                            } else {
+                                Text("No data yet — start logging daily spend.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(height: 80)
+                            }
+                        }
+                        .qmCard()
+                        .padding(.horizontal)
+
+                        // Calendar heat-grid (last 30 days)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Last 30 Days")
+                                .font(.headline)
+
+                            let chunks = Array(last30.reversed()).chunked(into: 7)
+                            VStack(spacing: 6) {
+                                ForEach(Array(chunks.enumerated()), id: \.offset) { _, week in
+                                    HStack(spacing: 6) {
+                                        ForEach(week) { log in
+                                            HeatCell(log: log)
+                                        }
+                                    }
                                 }
                             }
-                            .pickerStyle(.segmented)
-                            .padding(.horizontal, 16)
-
-                            switch selectedSegment {
-                            case 0: historySection
-                            case 1: dualWaveSection
-                            default: insightsSection
-                            }
-
-                            Spacer(minLength: 32)
                         }
-                        .padding(.top, 8)
-                    }
-                }
-            }
-            .navigationTitle("Insights")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
+                        .qmCard()
+                        .padding(.horizontal)
 
-    // MARK: - History
-    private var historySection: some View {
-        VStack(spacing: 16) {
-            // Full history chart
-            if appModel.allEntries.isEmpty {
-                Text("No data yet. Start logging your energy each day.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(32)
-            } else {
-                let sorted = appModel.allEntries.sorted { $0.date < $1.date }
-                Chart {
-                    ForEach(Array(sorted.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                        .interpolationMethod(.catmullRom)
-
-                        AreaMark(
-                            x: .value("Day", idx),
-                            yStart: .value("Base", 0),
-                            yEnd: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent.opacity(0.15))
-                        .interpolationMethod(.catmullRom)
-                    }
-                }
-                .chartYScale(domain: 0...10)
-                .chartXAxis(.hidden)
-                .frame(height: 180)
-                .padding(.horizontal, 16)
-
-                // Entry list
-                LazyVStack(spacing: 1) {
-                    ForEach(sorted.reversed()) { entry in
-                        HStack {
-                            Text(entry.date, style: .date)
-                                .font(.subheadline)
-                            Spacer()
-                            Text(entry.partOfDay.capitalized)
+                        // Export
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Export")
+                                .font(.headline)
+                            Text("Download a CSV of all your daily logs.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text("\(entry.level)")
-                                .font(.headline.monospacedDigit())
-                                .foregroundStyle(Color.qmAccent)
-                                .frame(width: 28, alignment: .trailing)
+                            Button("Export CSV") {
+                                exportText = buildCSV()
+                                showExportSheet = true
+                            }
+                            .softButton()
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.qmCard)
+                        .qmCard()
+                        .padding(.horizontal)
+
+                        Spacer(minLength: 32)
                     }
+                    .padding(.top)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(.horizontal, 16)
             }
-        }
-    }
-
-    // MARK: - Dual Wave
-    private var dualWaveSection: some View {
-        VStack(spacing: 16) {
-            Text("Morning vs Evening")
-                .font(.headline)
-
-            let mornings = appModel.allEntries.filter { $0.partOfDay == "morning" }.sorted { $0.date < $1.date }
-            let evenings = appModel.allEntries.filter { $0.partOfDay == "evening" }.sorted { $0.date < $1.date }
-
-            if mornings.isEmpty && evenings.isEmpty {
-                Text("Use the morning/evening toggle when logging to see your dual-wave comparison.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(32)
-            } else {
-                Chart {
-                    ForEach(Array(mornings.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Morning", entry.level),
-                            series: .value("Time", "Morning")
-                        )
+            .navigationTitle("History & Insights")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
                         .foregroundStyle(Color.qmAccent)
-                        .interpolationMethod(.catmullRom)
-                    }
-                    ForEach(Array(evenings.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Evening", entry.level),
-                            series: .value("Time", "Evening")
-                        )
-                        .foregroundStyle(Color.qmCorrect)
-                        .interpolationMethod(.catmullRom)
-                    }
-                }
-                .chartYScale(domain: 0...10)
-                .chartXAxis(.hidden)
-                .chartLegend(.visible)
-                .frame(height: 180)
-                .padding(.horizontal, 16)
-
-                HStack(spacing: 16) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color.qmAccent).frame(width: 10, height: 10)
-                        Text("Morning").font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 6) {
-                        Circle().fill(Color.qmCorrect).frame(width: 10, height: 10)
-                        Text("Evening").font(.caption).foregroundStyle(.secondary)
-                    }
                 }
             }
+            .sheet(isPresented: $showExportSheet) {
+                ShareSheet(text: exportText)
+            }
         }
-        .padding(.horizontal, 16)
     }
 
-    // MARK: - Insights
-    private var insightsSection: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 12) {
-                MetricTile(
-                    value: String(format: "%.1f", appModel.sevenDayAverage),
-                    label: "7-day avg"
-                )
-                MetricTile(
-                    value: "\(appModel.currentStreak)",
-                    label: "Day streak"
-                )
-                MetricTile(
-                    value: appModel.bestTimeOfDay,
-                    label: "Best time"
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Energy Insights")
-                    .font(.headline)
-
-                insightRow(
-                    icon: "sun.max",
-                    title: "Best time of day",
-                    value: appModel.bestTimeOfDay
-                )
-                insightRow(
-                    icon: "flame",
-                    title: "Current streak",
-                    value: "\(appModel.currentStreak) days"
-                )
-                insightRow(
-                    icon: "chart.line.uptrend.xyaxis",
-                    title: "Total entries",
-                    value: "\(appModel.allEntries.count)"
-                )
-                insightRow(
-                    icon: "waveform.path.ecg",
-                    title: "Average energy",
-                    value: String(format: "%.1f / 10", appModel.sevenDayAverage)
-                )
-            }
-            .qmCard()
+    private func buildCSV() -> String {
+        var lines = ["Date,Spent,Cap,Under Cap"]
+        let formatter = ISO8601DateFormatter()
+        for log in appModel.allLogs {
+            let date = formatter.string(from: log.date)
+            lines.append("\(date),\(log.spent),\(log.capAmount),\(log.underCap ? "Yes" : "No")")
         }
-        .padding(.horizontal, 16)
+        return lines.joined(separator: "\n")
+    }
+}
+
+// MARK: - Heat cell
+
+private struct HeatCell: View {
+    let log: DayLog
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(log.underCap ? Color.qmCorrect.opacity(0.7) : Color.qmWrong.opacity(0.6))
+                .frame(width: 34, height: 34)
+            Text(dayLabel(log.date))
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white)
+        }
     }
 
-    private func insightRow(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(Color.qmAccent)
-                .frame(width: 24)
-            Text(title)
-                .font(.subheadline)
-            Spacer()
-            Text(value)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+    private func dayLabel(_ date: Date) -> String {
+        let cal = Calendar.current
+        return "\(cal.component(.day, from: date))"
+    }
+}
+
+// MARK: - Share sheet
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let text: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Array chunk helper
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }

@@ -1,137 +1,117 @@
 import SwiftUI
-import Charts
 
+/// Primary entry / action screen — shown when user taps a quick-action from a widget or notification.
+/// Provides a focused single-field spend entry and the current cap status.
 struct GridView: View {
     @EnvironmentObject var appModel: AppModel
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var sliderValue: Double = 5
-    @State private var logged = false
-
-    private var chartEntries: [WaveEntry] {
-        Array(appModel.recentEntries.reversed())
-    }
+    @State private var spendText: String = ""
+    @State private var done = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Wave chart
-            if chartEntries.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 44))
-                        .foregroundStyle(Color.qmAccent.opacity(0.4))
-                    Text("Log your first energy level below")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(height: 140)
-                .frame(maxWidth: .infinity)
-            } else {
-                Chart {
-                    ForEach(Array(chartEntries.enumerated()), id: \.offset) { idx, entry in
-                        AreaMark(
-                            x: .value("Day", idx),
-                            yStart: .value("Base", 0),
-                            yEnd: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.qmAccent.opacity(0.25), Color.qmAccent.opacity(0.05)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .interpolationMethod(.catmullRom)
+        NavigationStack {
+            ZStack {
+                QMBackground()
+                VStack(spacing: 32) {
+                    Spacer()
 
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent)
-                        .lineStyle(StrokeStyle(lineWidth: 2.5))
-                        .interpolationMethod(.catmullRom)
+                    // Big spend amount entry
+                    VStack(spacing: 8) {
+                        Text("Enter today's total spend")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
 
-                        PointMark(
-                            x: .value("Day", idx),
-                            y: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent)
-                        .symbolSize(36)
-                    }
-                }
-                .chartYScale(domain: 0...10)
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(values: [0, 5, 10]) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
-                            .foregroundStyle(Color.qmHair)
-                        AxisValueLabel {
-                            if let v = value.as(Int.self) {
-                                Text("\(v)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                        HStack(alignment: .lastTextBaseline, spacing: 4) {
+                            Text("$")
+                                .font(.system(size: 36, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("0", text: $spendText)
+                                .keyboardType(.decimalPad)
+                                .font(.system(size: 56, weight: .bold))
+                                .minimumScaleFactor(0.5)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 220)
+                        }
+
+                        if let cap = Double(spendText.replacingOccurrences(of: ",", with: ".")) {
+                            let activeCapVal = appModel.activeCap
+                            let under = cap <= activeCapVal
+                            HStack(spacing: 6) {
+                                Image(systemName: under ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(under ? Color.qmCorrect : Color.qmWrong)
+                                Text(under
+                                     ? String(format: "$%.2f under cap", activeCapVal - cap)
+                                     : String(format: "$%.2f over cap", cap - activeCapVal))
+                                    .foregroundStyle(under ? Color.qmCorrect : Color.qmWrong)
+                                    .font(.subheadline.weight(.medium))
                             }
+                            .animation(.easeInOut(duration: 0.2), value: under)
                         }
                     }
-                }
-                .frame(height: 140)
-            }
-
-            // Divider
-            Divider()
-
-            // Log energy section
-            VStack(spacing: 12) {
-                HStack {
-                    Text("Energy level")
-                        .font(.headline)
-                    Spacer()
-                    Text("\(Int(sliderValue.rounded()))")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(Color.qmAccent)
-                        .monospacedDigit()
-                        .frame(width: 32)
-                }
-
-                Slider(value: $sliderValue, in: 0...10, step: 1)
-                    .tint(Color.qmAccent)
-                    .onChange(of: sliderValue) { _, _ in
-                        Haptics.tap()
-                        logged = false
-                    }
-
-                HStack {
-                    Text("Low")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("High")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button {
-                    appModel.logEnergy(level: Int(sliderValue.rounded()))
-                    Haptics.success()
-                    logged = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: logged ? "checkmark" : "waveform.path")
-                        Text(logged ? "Logged" : "Log Today's Energy")
-                    }
+                    .padding(.vertical, 24)
                     .frame(maxWidth: .infinity)
+                    .background(Color.qmCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .padding(.horizontal)
+
+                    // Streak status
+                    HStack(spacing: 12) {
+                        MetricTile(value: "\(appModel.streak.currentStreak)", label: "Streak")
+                        MetricTile(value: "\(appModel.streak.longestStreak)", label: "Best")
+                    }
+                    .padding(.horizontal)
+
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        Button {
+                            submitSpend()
+                        } label: {
+                            HStack {
+                                if done {
+                                    Image(systemName: "checkmark")
+                                    Text("Checked In")
+                                } else {
+                                    Text("Check In")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .prominentButton()
+                        .disabled(spendText.isEmpty || done)
+
+                        Button("Cancel") { dismiss() }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal)
+
+                    Spacer()
                 }
-                .prominentButton()
-                .disabled(logged)
-                .animation(.easeInOut(duration: 0.2), value: logged)
+            }
+            .navigationTitle("Quick Check-In")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                        .foregroundStyle(Color.qmAccent)
+                }
             }
         }
-        .qmCard()
         .onAppear {
-            if let today = appModel.todayEntry {
-                sliderValue = Double(today.level)
-                logged = true
+            if let existing = appModel.todayLog {
+                spendText = String(format: "%.2f", existing.spent)
             }
+        }
+    }
+
+    private func submitSpend() {
+        guard let amount = Double(spendText.replacingOccurrences(of: ",", with: ".")) else { return }
+        appModel.logSpend(amount)
+        Haptics.success()
+        done = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            dismiss()
         }
     }
 }

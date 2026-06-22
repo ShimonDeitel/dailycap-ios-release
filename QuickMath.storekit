@@ -9,7 +9,7 @@
       }
     ]
   },
-  "identifier": "LATTICE_STOREKIT_CONFIG",
+  "identifier": "DAILYCAP_STOREKIT_CONFIG",
   "nonRenewingSubscriptions": [],
   "products": [],
   "settings": {
@@ -18,9 +18,9 @@
   },
   "subscriptionGroups": [
     {
-      "id": "tideline_pro_group",
+      "id": "dailycap_pro_group",
       "localizations": [],
-      "name": "Tideline Pro",
+      "name": "Daily Cap Pro",
       "subscriptions": [
         {
           "adHocOffers": [],
@@ -28,19 +28,19 @@
           "displayPrice": "0.99",
           "familyShareable": false,
           "groupNumber": 1,
-          "internalID": "tideline_pro_monthly_id",
+          "internalID": "dailycap_pro_monthly_id",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Unlimited history, dual-wave comparison & daily insights.",
-              "displayName": "Tideline Pro",
+              "description": "Heat-grid, weekday caps, reminders, CSV export",
+              "displayName": "Daily Cap Pro",
               "locale": "en_US"
             }
           ],
-          "productID": "tideline_pro_monthly",
+          "productID": "dailycap_pro_monthly",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "Tideline Pro Monthly",
-          "subscriptionGroupID": "tideline_pro_group",
+          "referenceName": "Daily Cap Pro Monthly",
+          "subscriptionGroupID": "dailycap_pro_group",
           "type": "RecurringSubscription"
         }
       ]
